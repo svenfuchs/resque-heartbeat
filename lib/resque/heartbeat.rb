@@ -43,7 +43,7 @@ module Resque
       def connect
         # apparently the Redis connection is not thread-safe, so we connect another instance
         # see https://github.com/ezmobius/redis-rb/issues#issue/75
-        redis = Redis.connect(:url => Travis.config['redis']['url']).tap { |redis| redis.client.connect }
+        redis = Redis.connect(:url => ENV['REDIS_URL']).tap { |redis| redis.client.connect }
         Redis::Namespace.new(:resque, :redis => redis)
       end
 
