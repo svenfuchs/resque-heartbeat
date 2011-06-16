@@ -16,4 +16,6 @@ Gem::Specification.new do |s|
   s.platform     = Gem::Platform::RUBY
   s.require_path = 'lib'
   s.rubyforge_project = '[none]'
+
+  s.add_dependency 'resque', '~> 1.17.0'
 end
