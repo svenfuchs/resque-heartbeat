@@ -37,21 +37,22 @@ module Resque
       end
 
       def redis
-        @redis && connected? ? @redis : @redis = connect
+        Resque.redis
+        # @redis && connected? ? @redis : @redis = connect
       end
 
-      def connect
-        # apparently the Redis connection is not thread-safe, so we connect another instance
-        # see https://github.com/ezmobius/redis-rb/issues#issue/75
-        url   = Resque.redis.instance_variable_get(:@redis).client.location
-        redis = Redis.connect(:url => "redis://#{url}")
-        redis.client.connect
-        Redis::Namespace.new(:resque, :redis => redis)
-      end
+      # def connect
+      #   # apparently the Redis connection is not thread-safe, so we connect another instance
+      #   # see https://github.com/ezmobius/redis-rb/issues#issue/75
+      #   url   = Resque.redis.instance_variable_get(:@redis).client.location
+      #   redis = Redis.connect(:url => "redis://#{url}")
+      #   redis.client.connect
+      #   Redis::Namespace.new(:resque, :redis => redis)
+      # end
 
-      def connected?
-        @redis.client.connected?
-      end
+      # def connected?
+      #   @redis.client.connected?
+      # end
 
       def beat!
         redis.sadd(:workers, worker)
