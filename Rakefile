@@ -1,10 +1,8 @@
 require 'rake'
-require 'rake/testtask'
+require 'rspec'
+require 'rspec/core/rake_task'
+Dir['spec/**/*.rb'].each{|f| require_relative f}
 
-Rake::TestTask.new do |t|
-  t.libs << 'lib'
-  t.pattern = 'test/**/*_test.rb'
-  t.verbose = false
-end
+RSpec::Core::RakeTask.new('spec')
 
-task :default => :test
+task :default => :spec
