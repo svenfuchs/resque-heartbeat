@@ -1,73 +1,127 @@
 require 'resque'
 
 module Resque
-  def self.prune_dead_workers
-    begin
-      Worker.all.each { |worker| worker.prune_if_dead }
-    rescue Exception => e
-      p e
-    end
-  end
-
   class Worker
+    alias_method(:startup_without_heartbeat, :startup)
     def startup_with_heartbeat
       startup_without_heartbeat
       heart.run
     end
-    alias startup_without_heartbeat startup
-    alias startup startup_with_heartbeat
+    alias_method(:startup, :startup_with_heartbeat)
+
+    alias_method(:unregister_worker_without_heartbeat, :unregister_worker)
+    def unregister_worker_with_heartbeat(*args)
+      heart.stop
+      unregister_worker_without_heartbeat(*args)
+    end
+    alias_method(:unregister_worker, :unregister_worker_with_heartbeat)
 
     def heart
       @heart ||= Heart.new(self)
     end
 
+    def remote_hostname
+      id.split(':').first
+    end
+
+    def dead?
+      return heart.dead?
+    end
+
     def prune_if_dead
-      unregister_worker if heart.last_beat_before?(5)
+      return nil unless dead?
+
+      Resque.logger.info "Pruning worker '#{remote_hostname}' from resque"
+      unregister_worker
     end
 
     class Heart
       attr_reader :worker
+
+      def self.heartbeat_interval_seconds
+        2
+      end
+
+      def self.heartbeats_before_dead
+        25
+      end
+
 
       def initialize(worker)
         @worker = worker
       end
 
       def run
-        Thread.new { loop { sleep(2) && beat! } }
+        @thrd ||= Thread.new do
+          loop do
+            begin
+              beat! && sleep(2)
+            rescue Exception => e
+              Resque.logger.error "Error while doing heartbeat: #{e} : #{e.backtrace}"
+            end
+          end
+        end
+      end
+
+      def stop
+        Thread.kill(@thrd)
+        redis.del key
+      rescue
+        nil
       end
 
       def redis
         Resque.redis
-        # @redis && connected? ? @redis : @redis = connect
       end
 
-      # def connect
-      #   # apparently the Redis connection is not thread-safe, so we connect another instance
-      #   # see https://github.com/ezmobius/redis-rb/issues#issue/75
-      #   url   = Resque.redis.instance_variable_get(:@redis).client.location
-      #   redis = Redis.connect(:url => "redis://#{url}")
-      #   redis.client.connect
-      #   Redis::Namespace.new(:resque, :redis => redis)
-      # end
+      # you can send a redis wildcard to filter the workers you're looking for
+      def Heart.heartbeat_key(worker_name)
+        "worker:#{worker_name}:heartbeat"
+      end
 
-      # def connected?
-      #   @redis.client.connected?
-      # end
+      def key
+        Heart.heartbeat_key worker.remote_hostname
+      end
 
       def beat!
         redis.sadd(:workers, worker)
-        redis.set("worker:#{worker}:heartbeat", Time.now.to_s)
+        redis.setex(key, Heart.heartbeat_interval_seconds * Heart.heartbeats_before_dead, '')
       rescue Exception => e
-        p e
+        Resque.logger.fatal "Unable to set the heartbeat for worker '#{worker.remote_hostname}': #{e} : #{e.backtrace}"
       end
 
-      def last_beat_before?(seconds)
-        Time.parse(last_beat).utc < (Time.now.utc - seconds) rescue true
+      def dead?
+        !redis.exists(key)
       end
 
-      def last_beat
-        Resque.redis.get("worker:#{worker}:heartbeat") || worker.started
+      def ttl
+        Resque.redis.ttl key
       end
     end
+  end
+
+  # NOTE: this assumes all of your workers are putting out heartbeats
+  def self.prune_dead_workers!
+    begin
+      beats = Resque.redis.keys(Worker::Heart.heartbeat_key('*'))
+      Worker.all.each do |worker|
+        worker.prune_if_dead
+
+        # remove the worker from consideration
+        beats.delete worker.heart.key
+      end
+
+      # at this point, beats only contains stuff from workers we don't even know about. Ditch 'em.
+      beats.each do |key|
+        Resque.logger.info "Removing #{key} from heartbeats because the worker isn't talking to Resque."
+        Resque.redis.del key
+      end
+    rescue Exception => e
+      p e
+    end
+  end
+
+  def self.dead_workers
+    Worker.all.select{|w| w.dead?}
   end
 end
