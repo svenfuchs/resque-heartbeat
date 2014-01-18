@@ -38,12 +38,16 @@ module Resque
     class Heart
       attr_reader :worker
 
+      class << self
+        attr_writer :heartbeat_interval_seconds, :heartbeats_before_dead
+      end
+
       def self.heartbeat_interval_seconds
-        2
+        @heartbeat_interval_seconds ||= 2
       end
 
       def self.heartbeats_before_dead
-        25
+        @heartbeats_before_dead ||= 25
       end
 
 
