@@ -59,7 +59,7 @@ module Resque
         @thrd ||= Thread.new do
           loop do
             begin
-              beat! && sleep(2)
+              beat! && sleep(Heart.heartbeat_interval_seconds)
             rescue Exception => e
               Resque.logger.error "Error while doing heartbeat: #{e} : #{e.backtrace}"
             end
