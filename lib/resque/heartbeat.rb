@@ -24,6 +24,10 @@ module Resque
       id.split(':').first
     end
 
+    def remote_pid
+      id.split(':')[1]
+    end
+
     def dead?
       return heart.dead?
     end
@@ -78,13 +82,13 @@ module Resque
         Resque.redis
       end
 
-      # you can send a redis wildcard to filter the workers you're looking for
-      def Heart.heartbeat_key(worker_name)
-        "worker:#{worker_name}:heartbeat"
+      # you can send redis wildcards to filter the workers you're looking for
+      def Heart.heartbeat_key(worker_name, worker_pid)
+        "worker:#{worker_name}:#{worker_pid}:heartbeat"
       end
 
       def key
-        Heart.heartbeat_key worker.remote_hostname
+        Heart.heartbeat_key(worker.remote_hostname, worker.remote_pid)
       end
 
       def beat!
@@ -107,7 +111,7 @@ module Resque
   # NOTE: this assumes all of your workers are putting out heartbeats
   def self.prune_dead_workers!
     begin
-      beats = Resque.redis.keys(Worker::Heart.heartbeat_key('*'))
+      beats = Resque.redis.keys(Worker::Heart.heartbeat_key('*', '*'))
       Worker.all.each do |worker|
         worker.prune_if_dead
 

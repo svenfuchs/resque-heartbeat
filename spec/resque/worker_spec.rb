@@ -12,9 +12,9 @@ describe Resque::Worker do
     ret.level = Logger::FATAL
     ret
   end
-  let!(:start_info){ start_worker }
-  let(:worker){ start_info.first }
-  let(:pid){ start_info.last }
+  let!(:start_infos){ [start_worker, start_worker] }
+  let(:workers){ start_infos.map(&:first) }
+  let(:pids){ start_infos.map(&:last) }
 
   before(:each) do
     connect_redis
@@ -30,7 +30,7 @@ describe Resque::Worker do
   end
 
   def log(*args)
-    logger.debug *args
+    logger.debug(*args)
   end
 
   class TestWorker
@@ -99,39 +99,63 @@ describe Resque::Worker do
 
   it "heartbeat starts and stops normally" do
     begin
-      is_heart_beating?(worker, 3).should be_false
+      workers.each do |worker|
+        is_heart_beating?(worker, 3).should be_false
+      end
     ensure
-      Process.kill('INT', pid)
+      pids.each{|pid| Process.kill('INT', pid)}
     end
   end
 
   context "with a dead worker" do
+    let(:dead_pid){ pids.first }
+    let(:dead_worker){ workers.first }
+    let(:live_worker){ workers.last }
+
     before(:each) do
-      log "Killing worker #{pid}"
-      Process.kill("KILL", pid)
+      log "Killing worker #{dead_pid}"
+      Process.kill("KILL", dead_pid)
     end
 
     it "doesn't update the heartbeat" do
-      is_heart_beating?(worker, 5).should be_false
+      is_heart_beating?(dead_worker, 5).should be_false
     end
 
     def force_dead
       # Don't need to wait full TTL. Simulate it by removing the key
-      Resque.redis.del worker.heart.key
+      Resque.redis.del dead_worker.heart.key
     end
 
-    it "#dead? is true" do
-      force_dead
-      worker.dead?.should be_true
+    context "#dead?" do
+      before(:each) do
+        force_dead
+      end
+
+      it "is true for the dead worker" do
+        dead_worker.dead?.should be_true
+      end
+
+      it "is false for the rest of the workers" do
+        live_worker.dead?.should be_false
+      end
     end
 
-    it "Resque.prune_dead_workers! Removes dead workers and their heartbeats" do
-      raise "Worker cleaned up too early" if get_worker(pid).nil?
-      force_dead
-      Resque.prune_dead_workers!
-      worker.heart.ttl.should < 0
+    context "Resque.prune_dead_workers!" do
+      before(:each) do
+        raise "Worker cleaned up too early" if get_worker(dead_pid).nil?
+        force_dead
+        Resque.prune_dead_workers!
+      end
 
-      Resque.workers.map(&:id).should_not include(worker.id)
+      it "removes dead workers and their heartbeats" do
+        dead_worker.heart.ttl.should be < 0
+        Resque.workers.map(&:id).should_not include(dead_worker.id)
+      end
+
+      it "leaves live workers and their heartbeats intact" do
+        live_worker.heart.ttl.should be > 0
+        Resque.workers.map(&:id).should include(live_worker.id)
+      end
     end
   end
 end
