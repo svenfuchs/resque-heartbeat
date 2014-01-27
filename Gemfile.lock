@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    resque-heartbeat (0.0.9)
+    resque-heartbeat (0.1.0)
       resque (~> 1.25.0)
 
 GEM
@@ -9,12 +9,12 @@ GEM
   specs:
     diff-lcs (1.2.5)
     mono_logger (1.1.0)
-    multi_json (1.8.2)
+    multi_json (1.8.4)
     rack (1.5.2)
-    rack-protection (1.5.1)
+    rack-protection (1.5.2)
       rack
     rake (10.0.4)
-    redis (3.0.6)
+    redis (3.0.7)
     redis-namespace (1.4.1)
       redis (~> 3.0.4)
     resque (1.25.1)
